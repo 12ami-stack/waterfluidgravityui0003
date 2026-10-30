@@ -51,7 +51,7 @@
 
     <div class="title-zone">
         <h1>Fluid Gravity UI</h1>
-        <div class="hint">ホーム：中央レーンで上昇・端レーンで下降し、端のアイコン横でさらに外側へ【← / →】で押すと開く　アプリ内：【← / →】で左右のレーンへ切り替え（中央レーンの最上部で1秒放置でスリープ／戻る）</div>
+        <div class="hint">ホーム：中央レーンで上昇・端レーンで下降し、端のアイコン横でさらに外側へ【← / →】で押すとお手軽に開く アプリ内：【← / →】で左右のレーンへ切り替え（中央レーンの最上部で1秒放置でふわっとホームに戻る）</div>
     </div>
 
     <div id="stage-wrap">
@@ -94,7 +94,7 @@
         // 深度（進行状況を表す重力の座標）
         let depth = 50, targetDepth = 50;
         let flowOffset = 0;
-        let systemState = "home"; // home, opening, active, shutdown, sleepMenu, sleeping
+        let systemState = "home"; // home, opening, closing, active, shutdown, sleepMenu, sleeping
         const sleepMenuEl = document.getElementById('sleepmenu'), sleepingEl = document.getElementById('sleeping');
         let lastInput = 0, topSince = null, readyAt = 0, choosing = false;
         let guiVisible = true;
@@ -104,7 +104,7 @@
         const ROW_Y0 = 94, ROW_H = 78, ICON = 48, ICON_X = [36, 324];
         const Y_MIN = 60, Y_MAX = 500;
         const iconSel = new Array(APP_COUNT).fill(0);
-        let py = Y_MIN, pvy = 0, laneSince = 0, openP = 0, appIdx = 0, appIntro = 1;
+        let py = Y_MIN, pvy = 0, laneSince = 0, openP = 0, closeP = 0, appIdx = 0, appIntro = 1;
         const hueOf = (i) => (i * 47) % 360;
         const laneX = (l) => l * (width / 3) + (width / 3) / 2;
         function iconCenter(i) { return { x: ICON_X[i % COLS], y: ROW_Y0 + ROW_H * Math.floor(i / COLS) }; }
@@ -138,6 +138,13 @@
             py = Y_MIN; pvy = 0;
             laneSince = performance.now();
             readyAt = performance.now() + 800;
+        }
+
+        // ふわっとホームに戻るフェード演出を開始
+        function startClosingToHome() {
+            if (systemState === "closing" || systemState === "home") return;
+            systemState = "closing";
+            closeP = 0;
         }
 
         // 端レーンでさらに外側へ押す → 画面外へ押し出されて起動
@@ -175,7 +182,7 @@
             if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
             e.preventDefault();
             const now = performance.now();
-            if (systemState === "opening") return;
+            if (systemState === "opening" || systemState === "closing") return;
             if (systemState === "home") {
                 const dir = e.key === 'ArrowLeft' ? -1 : 1;
                 const nt = targetLane + dir;
@@ -191,33 +198,7 @@
             }
             if (e.repeat || now < readyAt) return; // せっかちに反応しない
             if (systemState === "shutdown" || systemState === "sleeping") resetUI();
-            else if (systemState === "sleepMenu") chooseSleep(e.key === 'ArrowLeft' ? 'sleep' : 'back');
         });
-
-        function showSleepMenu() {
-            systemState = "sleepMenu";
-            readyAt = performance.now() + 1200;
-            sleepMenuEl.style.display = 'flex';
-        }
-
-        function chooseSleep(choice) {
-            if (systemState !== "sleepMenu" || choosing) return;
-            choosing = true;
-            const picked = document.getElementById(choice === 'sleep' ? 'opt-sleep' : 'opt-back');
-            const other = document.getElementById(choice === 'sleep' ? 'opt-back' : 'opt-sleep');
-            picked.querySelector('button').classList.add('picked');
-            other.classList.add('dim');
-            setTimeout(() => {
-                sleepMenuEl.style.display = 'none';
-                if (choice === 'sleep') {
-                    systemState = "sleeping";
-                    readyAt = performance.now() + 1200;
-                    sleepingEl.style.display = 'flex';
-                } else {
-                    goHome(); // 戻る = ホームへ
-                }
-            }, 1000);
-        }
 
         // ---- 状態更新
         function updateHome() {
@@ -249,6 +230,15 @@
 
         function updateMechanism() {
             if (systemState === "home" || systemState === "opening") { updateHome(); return; }
+            
+            if (systemState === "closing") {
+                closeP += (1.05 - closeP) * 0.08;
+                if (closeP >= 1) {
+                    goHome();
+                }
+                return;
+            }
+
             appIntro += (1 - appIntro) * 0.06;
             if (systemState !== "active") return;
 
@@ -268,20 +258,19 @@
             }
             depth += (targetDepth - depth) * 0.1;
 
-            // 中央レーンの最上部で1秒放置 → スリープ選択
+            // 中央レーンの最上部で1秒放置 → ふわっとホームに戻るフェード演出へ
             const now = performance.now();
             if (roundLane === 1 && Math.abs(depth - stages[0].y) < 3) {
                 if (topSince === null) topSince = now;
-                if (now - topSince >= 1000 && now - lastInput >= 1000) { showSleepMenu(); return; }
+                if (now - topSince >= 1000 && now - lastInput >= 1000) { startClosingToHome(); return; }
             } else {
                 topSince = null;
             }
 
-            // 最深部に到達 → 企画中画面
-            if (depth >= stages[3].y - 5) {
-                systemState = "shutdown";
-                readyAt = performance.now() + 1500;
-                setTimeout(() => { notif.style.display = 'flex'; }, 300);
+            // 最深部に到達した場合、何もしない
+            if (depth >= stages[3].y) {
+                depth = stages[3].y;
+                targetDepth = stages[3].y;
             }
         }
 
@@ -410,6 +399,12 @@
             // 開いた直後のなじませ
             if (appIntro < 0.99) {
                 ctx.fillStyle = `hsla(${h},55%,45%,${1 - appIntro})`; ctx.fillRect(0, 0, width, height);
+            }
+
+            // ホームへ戻る際のふわっとしたフェードアウト（暗転）
+            if (systemState === "closing") {
+                ctx.fillStyle = `rgba(3, 7, 18, ${Math.min(closeP, 1)})`;
+                ctx.fillRect(0, 0, width, height);
             }
         }
 
