@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8"><title>Gravity Fluid UI - 流体追体験インターフェース</title>
+    <style>
+        :root { --bg: #030712; --panel: #0b1528; --accent-down: #00d2ff; --accent-up: #00ffaa; --p-color: #ffffff; }
+        body { margin: 0; background: var(--bg); color: #fff; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; overflow: hidden; }
+        .title-zone { text-align: center; margin-bottom: 20px; }
+        h1 { margin: 0; font-size: 1.6rem; letter-spacing: 4px; font-weight: 300; background: linear-gradient(90deg, var(--accent-down), var(--accent-up)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .hint { font-size: 0.85rem; color: #64748b; margin-top: 5px; }
+        #ui-wrapper { position: relative; width: 360px; height: 560px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5), 0 0 40px rgba(0,210,255,0.1); border-radius: 24px; overflow: hidden; border: 2px solid #1e293b; background: var(--panel); }
+        canvas { display: block; }
+        /* オーバーレイ通知 */
+        #notification { display: none; position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(3,7,18,0.95); backdrop-filter: blur(8px); flex-direction: column; align-items: center; justify-content: center; z-index: 10; animation: fadeIn 1.2s ease forwards; }
+        #notification { background-color: rgba(3,7,18,0.97); background-image: linear-gradient(rgba(251,191,36,0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(251,191,36,0.07) 1px, transparent 1px); background-size: 24px 24px; }
+        #notification::before { content: ""; position: absolute; inset: 14px; border: 1.5px dashed rgba(251,191,36,0.45); border-radius: 14px; pointer-events: none; }
+        .tape { position: absolute; left: 0; width: 100%; height: 14px; background: repeating-linear-gradient(-45deg, #fbbf24 0 12px, #1c1917 12px 24px); opacity: 0.85; }
+        .tape.top { top: 0; } .tape.bottom { bottom: 0; }
+        .plan-badge { font-size: 0.7rem; letter-spacing: 4px; color: #fbbf24; border: 1px solid #fbbf24; border-radius: 4px; padding: 3px 10px; margin-bottom: 18px; }
+        #notification h2 { font-size: 2.2rem; font-weight: 300; color: #fbbf24; letter-spacing: 8px; margin: 0 0 6px 0; }
+        .plan-sub { font-size: 0.7rem; letter-spacing: 3px; color: #78716c; margin-bottom: 22px; }
+        .plan-steps { display: flex; align-items: center; gap: 8px; margin-bottom: 26px; font-size: 0.65rem; color: #57534e; }
+        .plan-steps span { padding: 3px 8px; border: 1px dashed #57534e; border-radius: 10px; }
+        .plan-steps span.now { border: 1px solid #fbbf24; color: #fbbf24; }
+        .plan-steps i { width: 10px; border-top: 1px dashed #57534e; }
+        #notification p { color: #a8a29e; font-size: 0.85rem; line-height: 1.7; text-align: center; margin: 0 0 26px 0; }
+        button { background: transparent; border: 1px solid var(--accent-down); color: var(--accent-down); padding: 12px 30px; font-size: 0.9rem; cursor: pointer; border-radius: 30px; letter-spacing: 1px; transition: all 0.9s cubic-bezier(.22,.61,.36,1); }
+        .float { animation: float 4.5s ease-in-out infinite; }
+        .float:nth-child(2) { animation-delay: -2.2s; }
+        @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+        .key-hint { display: block; margin-top: 10px; text-align: center; font-size: 0.75rem; color: #64748b; letter-spacing: 2px; transition: opacity 0.9s ease; }
+        .overlay { display: none; position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(3,7,18,0.95); backdrop-filter: blur(8px); flex-direction: column; align-items: center; justify-content: center; z-index: 10; animation: fadeIn 1.2s ease forwards; }
+        .overlay h2 { font-size: 1.6rem; font-weight: 300; color: #94a3b8; margin: 0 0 10px 0; letter-spacing: 3px; }
+        .overlay p { color: #64748b; font-size: 0.85rem; margin: 0 0 30px 0; }
+        .btn-row { display: flex; gap: 24px; }
+        .btn-row .opt { text-align: center; transition: opacity 0.9s ease; }
+        .btn-row button.picked { background: var(--accent-down); color: var(--bg); transform: scale(1.08); }
+        .btn-row .opt.dim { opacity: 0.25; }
+        #sleeping { background: rgba(0,0,0,0.98); }
+        #sleeping h2 { animation: breathe 5s ease-in-out infinite; }
+        @keyframes breathe { 0%,100% { opacity: 0.25; } 50% { opacity: 0.8; } }
+        button:hover { background: var(--accent-down); color: var(--bg); box-shadow: 0 0 20px var(--accent-down); }
+        #stage-wrap { position: relative; }
+        #gui-toggle { position: absolute; left: calc(100% + 16px); top: 50%; transform: translateY(-50%); width: 92px; padding: 12px 8px; font-size: 0.75rem; line-height: 1.5; letter-spacing: 1px; white-space: nowrap; }
+        #gui-toggle small { display: block; font-size: 0.65rem; opacity: 0.7; }
+        #gui-toggle.off { border-color: #475569; color: #64748b; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    </style>
+</head>
+<body>
+
+    <div class="title-zone">
+        <h1>Fluid Gravity UI</h1>
+        <div class="hint">ホーム：中央レーンで上昇・端レーンで下降し、端のアイコン横でさらに外側へ【← / →】で押すと開く　アプリ内：【← / →】で左右のレーンへ切り替え（中央レーンの最上部で1秒放置でスリープ／戻る）</div>
+    </div>
+
+    <div id="stage-wrap">
+    <div id="ui-wrapper">
+        <canvas id="uiCanvas"></canvas>
+        <div id="notification">
+            <div class="tape top"></div><div class="tape bottom"></div>
+            <div class="plan-badge">DRAFT / WIP</div>
+            <h2 id="notif-title">企画中</h2>
+            <div class="plan-sub">UNDER PLANNING</div>
+            <div class="plan-steps"><span class="now">企画</span><i></i><span>設計</span><i></i><span>開発</span><i></i><span>公開</span></div>
+            <p id="notif-desc">この先は現在企画中です。<br>内容は未確定で、変更される場合があります。</p>
+            <div class="float">
+                <button onclick="resetUI()">UIを再起動</button>
+                <span class="key-hint">← →</span>
+            </div>
+        </div>
+        <div id="sleepmenu" class="overlay">
+            <h2>SLEEP?</h2>
+            <p>スリープ、またはホームへ戻りますか</p>
+            <div class="btn-row">
+                <div class="float"><div class="opt" id="opt-sleep"><button onclick="chooseSleep('sleep')">スリープ</button><span class="key-hint">←</span></div></div>
+                <div class="float"><div class="opt" id="opt-back"><button onclick="chooseSleep('back')">戻る</button><span class="key-hint">→</span></div></div>
+            </div>
+        </div>
+        <div id="sleeping" class="overlay">
+            <h2>SLEEP</h2>
+            <p>← → どちらかで復帰</p>
+        </div>
+    </div>
+    <button id="gui-toggle" onclick="toggleGui(); this.blur();">流体GUI<small>表示中</small></button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('uiCanvas'), ctx = canvas.getContext('2d'), notif = document.getElementById('notification');
+        const width = 360, height = 560;
+
+        // 3本の縦レーン構造 (0: 左/下降, 1: 中央/ジェット上昇, 2: 右/下降)
+        let currentLane = 1, targetLane = 1;
+        // 深度（進行状況を表す重力の座標）
+        let depth = 50, targetDepth = 50;
+        let flowOffset = 0;
+        let systemState = "home"; // home, opening, active, shutdown, sleepMenu, sleeping
+        const sleepMenuEl = document.getElementById('sleepmenu'), sleepingEl = document.getElementById('sleeping');
+        let lastInput = 0, topSince = null, readyAt = 0, choosing = false;
+        let guiVisible = true;
+
+        // ---- ホーム画面：左端レーンと右端レーンの2列に並べる（中央レーンはジェット）
+        const COLS = 2, ROWS = 6, APP_COUNT = COLS * ROWS;
+        const ROW_Y0 = 94, ROW_H = 78, ICON = 48, ICON_X = [36, 324];
+        const Y_MIN = 60, Y_MAX = 500;
+        const iconSel = new Array(APP_COUNT).fill(0);
+        let py = Y_MIN, pvy = 0, laneSince = 0, openP = 0, appIdx = 0, appIntro = 1;
+        const hueOf = (i) => (i * 47) % 360;
+        const laneX = (l) => l * (width / 3) + (width / 3) / 2;
+        function iconCenter(i) { return { x: ICON_X[i % COLS], y: ROW_Y0 + ROW_H * Math.floor(i / COLS) }; }
+        // ポインタが指しているアイコン（中央レーン＝ジェット上では選択なし）
+        function selectedIdx() {
+            const l = Math.round(currentLane);
+            if (l === 1) return -1;
+            const r = Math.max(0, Math.min(ROWS - 1, Math.round((py - ROW_Y0) / ROW_H)));
+            return r * COLS + (l < 1 ? 0 : 1);
+        }
+
+        // 進行度ステージ
+        const stages = [
+            { name: "SURFACE (水面)", y: 60,  desc: "安定した浅瀬層" },
+            { name: "MIDSTREAM (中層)", y: 220, desc: "深度1: 権限セクション" },
+            { name: "ABYSS (深海)", y: 380, desc: "深度2: シャットダウン準備" },
+            { name: "TERMINAL (最深部)", y: 510, desc: "深度3: 完全停止" }
+        ];
+
+        function hideOverlays() {
+            notif.style.display = 'none';
+            sleepMenuEl.style.display = 'none'; sleepingEl.style.display = 'none';
+            choosing = false;
+            document.querySelectorAll('#sleepmenu .opt, #sleepmenu button').forEach(el => el.classList.remove('dim', 'picked'));
+        }
+
+        function goHome() {
+            hideOverlays();
+            systemState = "home";
+            currentLane = 1; targetLane = 1;
+            py = Y_MIN; pvy = 0;
+            laneSince = performance.now();
+            readyAt = performance.now() + 800;
+        }
+
+        // 端レーンでさらに外側へ押す → 画面外へ押し出されて起動
+        function tryLaunch(dir) {
+            const now = performance.now();
+            const lane = dir < 0 ? 0 : 2;
+            if (targetLane !== lane || Math.abs(currentLane - lane) > 0.08 || now - laneSince < 350) return;
+            const idx = selectedIdx();
+            if (idx < 0) return;
+            appIdx = idx; openP = 0;
+            targetLane = dir < 0 ? -0.75 : 2.75;
+            systemState = "opening";
+        }
+
+        // アプリ（流体UI）の開始
+        function startApp() {
+            hideOverlays();
+            lastInput = performance.now(); topSince = null;
+            systemState = "active";
+            currentLane = 1; targetLane = 1;
+            depth = stages[0].y; targetDepth = stages[0].y;
+            appIntro = 0;
+        }
+        function resetUI() { startApp(); }
+
+        function toggleGui() {
+            guiVisible = !guiVisible;
+            const btn = document.getElementById('gui-toggle');
+            btn.classList.toggle('off', !guiVisible);
+            btn.querySelector('small').textContent = guiVisible ? '表示中' : '非表示';
+        }
+
+        // 入力：左右キーのみ（画面ごとに役割が変わる）
+        window.addEventListener('keydown', (e) => {
+            if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+            e.preventDefault();
+            const now = performance.now();
+            if (systemState === "opening") return;
+            if (systemState === "home") {
+                const dir = e.key === 'ArrowLeft' ? -1 : 1;
+                const nt = targetLane + dir;
+                if (nt >= 0 && nt <= 2) { targetLane = nt; laneSince = now; }
+                else if (!e.repeat && now >= readyAt) tryLaunch(dir);
+                return;
+            }
+            if (systemState === "active") {
+                lastInput = now;
+                if (e.key === 'ArrowLeft' && targetLane > 0) targetLane--;
+                if (e.key === 'ArrowRight' && targetLane < 2) targetLane++;
+                return;
+            }
+            if (e.repeat || now < readyAt) return; // せっかちに反応しない
+            if (systemState === "shutdown" || systemState === "sleeping") resetUI();
+            else if (systemState === "sleepMenu") chooseSleep(e.key === 'ArrowLeft' ? 'sleep' : 'back');
+        });
+
+        function showSleepMenu() {
+            systemState = "sleepMenu";
+            readyAt = performance.now() + 1200;
+            sleepMenuEl.style.display = 'flex';
+        }
+
+        function chooseSleep(choice) {
+            if (systemState !== "sleepMenu" || choosing) return;
+            choosing = true;
+            const picked = document.getElementById(choice === 'sleep' ? 'opt-sleep' : 'opt-back');
+            const other = document.getElementById(choice === 'sleep' ? 'opt-back' : 'opt-sleep');
+            picked.querySelector('button').classList.add('picked');
+            other.classList.add('dim');
+            setTimeout(() => {
+                sleepMenuEl.style.display = 'none';
+                if (choice === 'sleep') {
+                    systemState = "sleeping";
+                    readyAt = performance.now() + 1200;
+                    sleepingEl.style.display = 'flex';
+                } else {
+                    goHome(); // 戻る = ホームへ
+                }
+            }, 1000);
+        }
+
+        // ---- 状態更新
+        function updateHome() {
+            if (systemState === "opening") {
+                currentLane += (targetLane - currentLane) * 0.1;
+                pvy *= 0.9;
+                openP += (1.05 - openP) * 0.07;
+                if (openP >= 1) startApp();
+            } else {
+                currentLane += (targetLane - currentLane) * 0.25;
+                const l = Math.round(currentLane);
+                let vTarget;
+                if (l === 1) {
+                    vTarget = -5; // 中央レーン：ジェット上昇
+                } else {
+                    // 端レーン：何もしないと落ちる（アイコンの高さ付近ではふわっと減速）
+                    const r = Math.max(0, Math.min(ROWS - 1, Math.round((py - ROW_Y0) / ROW_H)));
+                    const d = Math.abs(py - (ROW_Y0 + ROW_H * r));
+                    vTarget = 2.2 * (0.55 + 0.45 * Math.min(1, d / 20));
+                }
+                pvy += (vTarget - pvy) * 0.08;
+                py += pvy;
+                if (py < Y_MIN) { py = Y_MIN; pvy = 0; }
+                if (py > Y_MAX) { py = Y_MAX; pvy = 0; }
+            }
+            const sel = systemState === "opening" ? appIdx : selectedIdx();
+            for (let i = 0; i < APP_COUNT; i++) iconSel[i] += ((i === sel ? 1 : 0) - iconSel[i]) * 0.08;
+        }
+
+        function updateMechanism() {
+            if (systemState === "home" || systemState === "opening") { updateHome(); return; }
+            appIntro += (1 - appIntro) * 0.06;
+            if (systemState !== "active") return;
+
+            currentLane += (targetLane - currentLane) * 0.25;
+            let roundLane = Math.round(currentLane);
+
+            if (roundLane === 1) {
+                targetDepth -= 8;
+                if (targetDepth < stages[0].y) targetDepth = stages[0].y;
+            } else {
+                targetDepth += 1.5;
+                for (let i = 0; i < stages.length - 1; i++) {
+                    if (depth > stages[i].y + 20 && depth < stages[i+1].y) {
+                        if (targetDepth < stages[i+1].y) targetDepth += 2;
+                    }
+                }
+            }
+            depth += (targetDepth - depth) * 0.1;
+
+            // 中央レーンの最上部で1秒放置 → スリープ選択
+            const now = performance.now();
+            if (roundLane === 1 && Math.abs(depth - stages[0].y) < 3) {
+                if (topSince === null) topSince = now;
+                if (now - topSince >= 1000 && now - lastInput >= 1000) { showSleepMenu(); return; }
+            } else {
+                topSince = null;
+            }
+
+            // 最深部に到達 → 企画中画面
+            if (depth >= stages[3].y - 5) {
+                systemState = "shutdown";
+                readyAt = performance.now() + 1500;
+                setTimeout(() => { notif.style.display = 'flex'; }, 300);
+            }
+        }
+
+        // ---- 描画
+        function rr(x, y, w, h, r) {
+            ctx.beginPath();
+            ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+            ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+        }
+
+        function drawLanes() {
+            const laneWidth = width / 3;
+            for (let i = 0; i < 3; i++) {
+                ctx.fillStyle = i === 1 ? '#07201a' : '#051122';
+                ctx.fillRect(i * laneWidth, 0, laneWidth, height);
+                ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 1;
+                ctx.strokeRect(i * laneWidth, 0, laneWidth, height);
+                ctx.strokeStyle = i === 1 ? 'rgba(0, 255, 170, 0.12)' : 'rgba(0, 210, 255, 0.08)';
+                ctx.lineWidth = 1.5;
+                for (let y = -60; y < height; y += 60) {
+                    ctx.beginPath();
+                    let currY = i === 1 ? y + (60 - flowOffset) : y + flowOffset;
+                    ctx.moveTo(i * laneWidth + laneWidth/2, currY);
+                    ctx.lineTo(i * laneWidth + laneWidth/2, currY + 20);
+                    ctx.stroke();
+                }
+            }
+        }
+
+        function drawDroplet(x, y, r, core) {
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = core;
+            ctx.beginPath(); ctx.arc(x, y, r * 0.36, 0, Math.PI * 2); ctx.fill();
+        }
+
+        function drawHome() {
+            const t = performance.now();
+            if (guiVisible) drawLanes(); else { ctx.fillStyle = '#050810'; ctx.fillRect(0, 0, width, height); }
+
+            // ステータスバー（スマホ風）
+            ctx.fillStyle = '#cbd5e1'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'left';
+            ctx.fillText('9:41', 18, 26);
+            ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 1; rr(318, 17, 22, 10, 3); ctx.stroke();
+            ctx.fillStyle = '#cbd5e1'; rr(320, 19, 14, 6, 2); ctx.fill();
+
+            // アイコン（左端・右端の2列）
+            for (let i = 0; i < APP_COUNT; i++) {
+                const c = iconCenter(i), sel = iconSel[i];
+                const bob = Math.sin(t / 900 + i * 0.9) * (1.2 + sel * 2);
+                const sc = 1 + 0.12 * sel, size = ICON * sc;
+                const x = c.x - size / 2, y = c.y + bob - size / 2;
+                const h = hueOf(i);
+                const g = ctx.createLinearGradient(x, y, x, y + size);
+                g.addColorStop(0, `hsl(${h},65%,62%)`); g.addColorStop(1, `hsl(${h},60%,42%)`);
+                ctx.fillStyle = g; rr(x, y, size, size, 13 * sc); ctx.fill();
+                ctx.strokeStyle = `rgba(255,255,255,${0.9 * sel})`; ctx.lineWidth = 2; rr(x, y, size, size, 13 * sc); ctx.stroke();
+                ctx.fillStyle = 'rgba(255,255,255,0.92)'; ctx.font = `bold ${Math.round(18 * sc)}px sans-serif`;
+                ctx.textAlign = 'center'; ctx.fillText(String(i + 1), c.x, c.y + bob + 6 * sc);
+                ctx.fillStyle = sel > 0.5 ? '#f8fafc' : '#94a3b8'; ctx.font = '10px sans-serif';
+                ctx.fillText('テスト' + (i + 1), c.x, c.y + 40);
+            }
+            ctx.textAlign = 'left';
+
+            // 流体GUI：ポインタ（光の雫）
+            if (guiVisible) {
+                drawDroplet(laneX(currentLane), py, 14, Math.round(currentLane) === 1 ? varColor('--accent-up') : varColor('--accent-down'));
+            }
+
+            // 操作ヒント
+            ctx.fillStyle = '#475569'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+            ctx.fillText('中央＝上昇 / 端＝下降 / 外側へ押して開く', width / 2, height - 14); ctx.textAlign = 'left';
+
+            // アプリを開く：選んだアイコンから広がる
+            if (systemState === "opening") {
+                const c = iconCenter(appIdx);
+                ctx.fillStyle = `hsl(${hueOf(appIdx)},55%,45%)`;
+                ctx.beginPath(); ctx.arc(c.x, c.y, Math.min(openP, 1) * 520, 0, Math.PI * 2); ctx.fill();
+            }
+        }
+
+        function drawApp() {
+            const accentDown = varColor('--accent-down'), accentUp = varColor('--accent-up');
+            const laneWidth = width / 3, h = hueOf(appIdx);
+
+            // 背景
+            if (guiVisible) drawLanes(); else { ctx.fillStyle = '#050810'; ctx.fillRect(0, 0, width, height); }
+            ctx.fillStyle = `hsla(${h},60%,50%,0.07)`; ctx.fillRect(0, 0, width, height);
+
+            // ダミーアプリの中身
+            const cx = width / 2;
+            ctx.fillStyle = '#94a3b8'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+            ctx.fillText('TEST APP #' + (appIdx + 1) + '  /  ダミー', cx, 26);
+            const g = ctx.createLinearGradient(0, 180, 0, 260);
+            g.addColorStop(0, `hsl(${h},65%,62%)`); g.addColorStop(1, `hsl(${h},60%,42%)`);
+            ctx.fillStyle = g; rr(cx - 40, 190, 80, 80, 20); ctx.fill();
+            ctx.fillStyle = 'rgba(255,255,255,0.92)'; ctx.font = 'bold 30px sans-serif'; ctx.fillText(String(appIdx + 1), cx, 242);
+            ctx.fillStyle = '#f8fafc'; ctx.font = 'bold 14px sans-serif'; ctx.fillText('テスト' + (appIdx + 1), cx, 300);
+            ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif'; ctx.fillText('ダミーアプリ（中身は未実装）', cx, 318);
+            ctx.fillStyle = 'rgba(148,163,184,0.15)';
+            rr(cx - 80, 336, 160, 8, 4); ctx.fill(); rr(cx - 80, 352, 120, 8, 4); ctx.fill(); rr(cx - 80, 368, 140, 8, 4); ctx.fill();
+            ctx.textAlign = 'left';
+
+            if (guiVisible) {
+                // 深度インジケーター
+                stages.forEach((stage, idx) => {
+                    let isPassed = depth >= stage.y;
+                    ctx.fillStyle = isPassed ? (idx === 3 ? '#ef4444' : accentDown) : '#334155';
+                    ctx.beginPath(); ctx.arc(width/2 - 100, stage.y, 6, 0, Math.PI*2); ctx.fill();
+                    ctx.beginPath(); ctx.arc(width/2 + 100, stage.y, 6, 0, Math.PI*2); ctx.fill();
+                    ctx.font = '10px sans-serif'; ctx.fillStyle = isPassed ? '#94a3b8' : '#475569';
+                    ctx.fillText(stage.name, 35, stage.y + 4);
+                    ctx.strokeStyle = 'rgba(30, 41, 59, 0.5)'; ctx.lineWidth = 1;
+                    ctx.beginPath(); ctx.moveTo(110, stage.y); ctx.lineTo(250, stage.y); ctx.stroke();
+                });
+                let currentStage = stages[0];
+                for (let i = 0; i < stages.length; i++) { if (depth >= stages[i].y - 10) currentStage = stages[i]; }
+                ctx.fillStyle = '#f8fafc'; ctx.font = 'bold 12px sans-serif'; ctx.fillText(currentStage.name, 125, height - 45);
+                ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif'; ctx.fillText(currentStage.desc, 125, height - 28);
+
+                // 自機（光の雫）
+                const playerX = currentLane * laneWidth + laneWidth / 2;
+                drawDroplet(playerX, depth, 14, Math.round(currentLane) === 1 ? accentUp : accentDown);
+            }
+
+            // 開いた直後のなじませ
+            if (appIntro < 0.99) {
+                ctx.fillStyle = `hsla(${h},55%,45%,${1 - appIntro})`; ctx.fillRect(0, 0, width, height);
+            }
+        }
+
+        function drawUI() {
+            ctx.clearRect(0, 0, width, height);
+            flowOffset = (flowOffset + 2) % 60;
+            if (systemState === "home" || systemState === "opening") drawHome(); else drawApp();
+        }
+
+        function varColor(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+        function updateLoop() {
+            updateMechanism();
+            drawUI();
+            requestAnimationFrame(updateLoop);
+        }
+
+        canvas.width = width; canvas.height = height;
+        goHome();
+        updateLoop();
+    </script>
+</body>
+</html>
