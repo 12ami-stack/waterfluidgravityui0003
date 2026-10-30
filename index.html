@@ -159,13 +159,14 @@
             systemState = "opening";
         }
 
-        // アプリ（流体UI）の開始
+        // アプリ（流体UI）の開始（初期位置を左下に変更）
         function startApp() {
             hideOverlays();
             lastInput = performance.now(); topSince = null;
             systemState = "active";
-            currentLane = 1; targetLane = 1;
-            depth = stages[0].y; targetDepth = stages[0].y;
+            // 変更点: 初期位置を左下（左端レーン = 0、最深部付近 = stages[3].y）に設定
+            currentLane = 0; targetLane = 0;
+            depth = stages[3].y; targetDepth = stages[3].y;
             appIntro = 0;
         }
         function resetUI() { startApp(); }
